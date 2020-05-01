@@ -1,4 +1,7 @@
+*.txt
+Makefile
 *.o
+*.so.*
 *.so
 *.user
 *.cmd

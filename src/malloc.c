@@ -222,47 +222,33 @@ void* my_malloc_hook (size_t size, void *caller)
 
     malloc_hook_active = 0;
 
-    size_t diff_size;
+    long diff_size = -1;
 
     size_t _align = size % _align_malloc;
     if(_align) {
         size += _align_malloc - _align;
     }
 
-    diff_size = size;
-
     HookChunk *ptr_next = (HookChunk*)ptr_base_heap;
     HookChunk *find_ptr = 0;
-    int _count = 0;
 
     while(ptr_next != last_valid_addr)
     {
-        HookChunk *ptr_step = ptr_next;
-        size_t _s = ptr_step->size;
-
-        if((_s < 0) || (_s > 300000000)){
-            break;
-        }
-
-        if((ptr_step->is_available == 0) && (size <= _s))
+        if((ptr_next->is_available == 0) && (size <= ptr_next->size))
         {
-            if((_s - size) < diff_size)
+            if( (diff_size == -1) || ((ptr_next->size - size) < (size_t)diff_size) )
             {
-                diff_size = _s - size;
-                find_ptr = ptr_step;
+                diff_size = ptr_next->size - size;
+                find_ptr = ptr_next;
             }
         }
-        ++_count;
-        ptr_next = (HookChunk *)((char*)(ptr_step + 1) + _s);
+        ptr_next = (HookChunk *)((char*)(ptr_next + 1) + ptr_next->size);
     }
-
-    int reused = 0;
 
     if(find_ptr) {
         result = find_ptr + 1;
         //find_ptr->curr_size = size;
         find_ptr->is_available = 1;
-        reused = 1;
     } else {
         if(total_alloc_mem + size <= TOTAL_MEM_HOOK_MALLOC)
         {
@@ -278,8 +264,7 @@ void* my_malloc_hook (size_t size, void *caller)
             }            
             total_alloc_mem += size + sizeof(HookChunk);
         } else {
-            printf("!!!!!!!!!!!!!!! Error alloc size =%ld\n",
-                   size + total_alloc_mem);
+            printf("!!!!!!!!!!!!!!! Error alloc size =%ld\n", size);
         }
     }
 
@@ -290,12 +275,15 @@ void* my_malloc_hook (size_t size, void *caller)
     return result;
 }
 
-void InitHookMalloc()
-{    
+void InitTinyMalloc(size_t size_pool, size_t size_chunk) {
+
     if(malloc_hook_active) {
         printf("!!!!!!!!!!!!!!! Error InitHookMalloc has already been executed.\n");
         return;
     }
+
+    TOTAL_MEM_HOOK_MALLOC = size_pool;
+    SIZE_MEM_HOOK_MALLOC = size_chunk;
 
     total_alloc_mem = 0;
     count_alloc_chunks = 0;
@@ -315,7 +303,7 @@ void InitHookMalloc()
     malloc_hook_active = 1;
 }
 
-void PackHookMalloc()
+void PackTinyMalloc()
 {
     HookChunk *ptr_next;
 
@@ -338,7 +326,7 @@ void PackHookMalloc()
 }
 
 
-void DumpHookMalloc(const char* name)
+void DumpTinyMalloc(const char* name)
 {
     FILE* fd;
 
@@ -353,7 +341,7 @@ void DumpHookMalloc(const char* name)
         size_t _used = 0;
         int counter = 1;
 
-        fprintf(fd, "Num \t addr\t\t used \t size \t curr_size\n");
+        fprintf(fd, "Num \t addr\t\t used \t size\n");
 
         while(ptr1) {
 
@@ -386,12 +374,12 @@ void DumpHookMalloc(const char* name)
 }
 
 
-void StopHookMalloc()
+void StopTinyMalloc()
 {
     malloc_hook_active = 0;
 }
 
-void StartHookMalloc()
+void StartTinyMalloc()
 {
     malloc_hook_active = 1;
 }

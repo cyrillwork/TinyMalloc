@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <pthread.h>
 
-size_t TOTAL_MEM_HOOK_MALLOC = 3000000000;
+#define TOTAL_MEM_HOOK_MALLOC 3000000000
 
 //mmap
 //#define SIZE_MEM_HOOK_MALLOC      256000
@@ -16,7 +16,7 @@ size_t TOTAL_MEM_HOOK_MALLOC = 3000000000;
 //#define SIZE_MEM_HOOK_MALLOC      4096
 //#define SIZE_MEM_HOOK_MALLOC      2048
 
-size_t SIZE_MEM_HOOK_MALLOC = 16;
+#define SIZE_MEM_HOOK_MALLOC  0
 
 pthread_mutex_t *mutex_malloc = 0;
 
@@ -32,15 +32,11 @@ struct __attribute__ ((packed)) HookChunk
 
 
 
-void InitTinyMalloc(size_t size_pool, size_t size_chunk);
+void InitTinyMalloc();
 
 void PackTinyMalloc();
 
 void DumpTinyMalloc(const char* name);
-
-void StopTinyMalloc();
-
-void StartTinyMalloc();
 
 
 #endif

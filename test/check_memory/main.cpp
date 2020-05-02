@@ -25,16 +25,31 @@ int main()
 {
 	std::cout << "Check memory" << std::endl;
 
-#ifdef USE_TINYMALLOC
-	InitTinyMalloc(1000000000, 0);
-#endif
+//#ifdef USE_TINYMALLOC
+//	InitTinyMalloc(1000000000, 0);
+//#endif
 
 	{
-		char* ptr1 = (char*)malloc(50000000);
-		char* ptr2 = (char*)malloc(150000000);
+		size_t size1 = 50000000;
+		size_t size2 = 100000000;
+
+		char* ptr1 = (char*)malloc(size1);
+		char* ptr2 = (char*)malloc(size2);
 
 		printf("ptr1=%p\n", ptr1);
 		printf("ptr2=%p\n", ptr2);
+
+
+#ifdef USE_TINYMALLOC
+		DumpTinyMalloc("dump1_1.txt");
+#endif
+
+		ptr1 = (char*)realloc(ptr1, size1*2);
+		ptr2 = (char*)realloc(ptr2, size2*2);
+
+#ifdef USE_TINYMALLOC
+		DumpTinyMalloc("dump1_2.txt");
+#endif
 
 		if(ptr1){
 			free(ptr1);
@@ -45,8 +60,9 @@ int main()
 		}
 
 #ifdef USE_TINYMALLOC
-		DumpTinyMalloc("dump1.txt");
+		DumpTinyMalloc("dump1_3.txt");
 #endif
+
 
 	}
 

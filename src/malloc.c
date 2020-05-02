@@ -18,7 +18,12 @@ void* my_malloc_hook (size_t size, void *caller);
 void my_free_hook (void *ptr, void *caller);
 void* my_realloc_hook (void *ptr, size_t size, void *caller);
 
-size_t malloc_hook_active = 0;
+#ifdef MEMORY_CHECK
+int checkMemory();
+#endif
+
+size_t is_init_pool = 0;
+
 size_t total_alloc_mem;
 size_t count_alloc_chunks;
 
@@ -36,12 +41,16 @@ void free (void *ptr)
 {
     void *caller;
 
+    if(!is_init_pool) {
+        InitTinyMalloc();
+    }
+
     if(!ptr) {
         //printf("!!!!!!!!!!!!!!! Error free null\n");
         return;
     }
 
-    if(/*!malloc_hook_active ||*/ !mutex_malloc) {
+    if(!mutex_malloc) {
         __libc_free(ptr);
         return;
     }
@@ -50,7 +59,11 @@ void free (void *ptr)
 
     caller = __builtin_return_address(0);
 
-    if (malloc_hook_active &&
+#ifdef MEMORY_CHECK
+    checkMemory();
+#endif
+
+    if ( /*malloc_hook_active &&*/
         ( (ptr_base_heap <= ptr) && (ptr <= ptr_base_heap + TOTAL_MEM_HOOK_MALLOC) )
             ) {
         my_free_hook(ptr, caller);
@@ -58,19 +71,16 @@ void free (void *ptr)
         __libc_free(ptr);
     }
 
+#ifdef MEMORY_CHECK
+    checkMemory();
+#endif
     pthread_mutex_unlock(mutex_malloc);
 }
 
 void my_free_hook (void *ptr, void *caller)
 {
-    // deactivate hooks for logging
-    malloc_hook_active = 0;
-
     HookChunk *ptr1 = (HookChunk *)(ptr) - 1;
     ptr1->is_available = 0;
-
-    // reactivate hooks
-    malloc_hook_active = 1;
 }
 
 void* realloc (void* ptr, size_t size)
@@ -78,11 +88,11 @@ void* realloc (void* ptr, size_t size)
     void *result = 0;
     void *caller;
 
-//    if((784700 < size) && (size < 784800)){
-//        printf("realloc\n");
-//    }
+    if(!is_init_pool) {
+        InitTinyMalloc();
+    }
 
-    if(/*!malloc_hook_active ||*/ !mutex_malloc) {
+    if(!mutex_malloc) {
         return __libc_realloc(ptr, size);
     }
 
@@ -90,8 +100,10 @@ void* realloc (void* ptr, size_t size)
 
     caller =  __builtin_return_address(0);
 
-    if (malloc_hook_active)
-    {
+#ifdef MEMORY_CHECK
+    checkMemory();
+#endif
+
         if(size >= SIZE_MEM_HOOK_MALLOC) {
             if(!ptr) {
                 result =  my_malloc_hook(size, caller);
@@ -108,9 +120,9 @@ void* realloc (void* ptr, size_t size)
             }
         }
 
-    } else {
-        result = __libc_realloc(ptr, size);
-    }
+#ifdef MEMORY_CHECK
+        checkMemory();
+#endif
 
     pthread_mutex_unlock(mutex_malloc);
 
@@ -120,8 +132,6 @@ void* realloc (void* ptr, size_t size)
 void* my_realloc_hook (void *ptr, size_t size, void *caller)
 {
     void *result = 0;
-
-    malloc_hook_active = 0;
 
     HookChunk *curr_ptr = 0;
 
@@ -167,10 +177,10 @@ void* my_realloc_hook (void *ptr, size_t size, void *caller)
                 chunk->size = size;
                 //chunk->curr_size = size;
                 chunk->is_available = 1;
+                last_valid_addr = (char*)(chunk + 1) + size;
                 result = chunk + 1;
-
             }
-            total_alloc_mem += size + sizeof(HookChunk)*count_alloc_chunks;
+            total_alloc_mem += size + sizeof(HookChunk);
 
             if(curr_ptr){
                 curr_ptr->is_available = 0;
@@ -183,9 +193,6 @@ void* my_realloc_hook (void *ptr, size_t size, void *caller)
 
     }
 
-
-    malloc_hook_active = 1;
-
     return result;
 }
 
@@ -195,7 +202,11 @@ void* malloc (size_t size)
     void *result;
     void *caller;
 
-    if(/*!malloc_hook_active ||*/ !mutex_malloc) {
+    if(!is_init_pool) {
+        InitTinyMalloc();
+    }
+
+    if(!mutex_malloc) {
         return __libc_malloc(size);
     }
 
@@ -203,11 +214,19 @@ void* malloc (size_t size)
 
     caller =  __builtin_return_address(0);
 
-    if (malloc_hook_active && (size >= SIZE_MEM_HOOK_MALLOC) /*&& ((total_alloc_mem + size) < TOTAL_MEM_HOOK_MALLOC)*/) {
+#ifdef MEMORY_CHECK
+    checkMemory();
+#endif
+
+    if (size >= SIZE_MEM_HOOK_MALLOC) {
         result =  my_malloc_hook(size, caller);
     } else {
         result = __libc_malloc(size);
     }
+
+#ifdef MEMORY_CHECK
+    checkMemory();
+#endif
 
     pthread_mutex_unlock(mutex_malloc);
 
@@ -219,9 +238,6 @@ const size_t _align_malloc = 16; //sizeof(void*);
 void* my_malloc_hook (size_t size, void *caller)
 {
     void *result = 0;
-
-    malloc_hook_active = 0;
-
     long diff_size = -1;
 
     size_t _align = size % _align_malloc;
@@ -253,6 +269,7 @@ void* my_malloc_hook (size_t size, void *caller)
         if(total_alloc_mem + size <= TOTAL_MEM_HOOK_MALLOC)
         {
             ++count_alloc_chunks;
+
             result = (char*)ptr_base_heap + total_alloc_mem;
             {
                 HookChunk *chunk = (HookChunk*)(result);
@@ -271,19 +288,18 @@ void* my_malloc_hook (size_t size, void *caller)
     //    printf("!!!!!!!!!!!!!!! malloc(size=%ld) total=%ld reused=%d\n",
     //           size, total_alloc_mem, reused);
 
-    malloc_hook_active = 1;
     return result;
 }
 
-void InitTinyMalloc(size_t size_pool, size_t size_chunk) {
+void InitTinyMalloc() {
 
-    if(malloc_hook_active) {
+    if(is_init_pool) {
         printf("!!!!!!!!!!!!!!! Error InitHookMalloc has already been executed.\n");
         return;
     }
 
-    TOTAL_MEM_HOOK_MALLOC = size_pool;
-    SIZE_MEM_HOOK_MALLOC = size_chunk;
+//    TOTAL_MEM_HOOK_MALLOC = size_pool;
+//    SIZE_MEM_HOOK_MALLOC = size_chunk;
 
     total_alloc_mem = 0;
     count_alloc_chunks = 0;
@@ -300,7 +316,7 @@ void InitTinyMalloc(size_t size_pool, size_t size_chunk) {
     mutex_malloc = (pthread_mutex_t*)__libc_malloc(sizeof (pthread_mutex_t));
     memset(mutex_malloc, 0, sizeof(pthread_mutex_t));
 
-    malloc_hook_active = 1;
+    is_init_pool = 1;
 }
 
 void PackTinyMalloc()
@@ -325,13 +341,34 @@ void PackTinyMalloc()
 
 }
 
+#ifdef MEMORY_CHECK
+int checkMemory() {
+    int result = 1;
+    int count_chunk = 0;
+
+    HookChunk *ptr_next = (HookChunk*)ptr_base_heap;
+
+    while(ptr_next != last_valid_addr) {
+        ++count_chunk;
+        ptr_next = (HookChunk*)( (char*)(ptr_next + 1) + ptr_next->size);
+
+        if ((ptr_next != last_valid_addr)&&(!ptr_next->size))
+        {
+            result = 0;
+            break;
+        }
+    }
+    return result;
+}
+#endif
 
 void DumpTinyMalloc(const char* name)
 {
     FILE* fd;
 
-    //pthread_mutex_lock(&mutex);
-    malloc_hook_active = 0;
+    if(!is_init_pool){
+        return;
+    }
 
     fd = fopen(name, "w");
 
@@ -343,7 +380,7 @@ void DumpTinyMalloc(const char* name)
 
         fprintf(fd, "Num \t addr\t\t used \t size\n");
 
-        while(ptr1) {
+        while( ptr1 != last_valid_addr)  {
 
             fprintf(fd, "%d\t%p\t%d\t%ld\n" ,
                     counter, ptr1, ptr1->is_available, ptr1->size);
@@ -354,9 +391,9 @@ void DumpTinyMalloc(const char* name)
             }
             ++counter;
 
-            ptr1 = (HookChunk*)((char*)ptr1 + ptr1->size + sizeof(HookChunk));
+            ptr1 = (HookChunk*)((char*)(ptr1 + 1) + ptr1->size);
             if(!ptr1->size) {
-                ptr1 = 0;
+                break;
             }
 
         }
@@ -369,17 +406,4 @@ void DumpTinyMalloc(const char* name)
         fclose(fd);
     }
 
-    //pthread_mutex_unlock(&mutex);
-    malloc_hook_active = 1;
-}
-
-
-void StopTinyMalloc()
-{
-    malloc_hook_active = 0;
-}
-
-void StartTinyMalloc()
-{
-    malloc_hook_active = 1;
 }

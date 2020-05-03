@@ -13,6 +13,7 @@ extern void *__libc_malloc(size_t size);
 extern void __libc_free(void *ptr);
 extern void *__libc_realloc(void * ptr, size_t size);
 extern void *__libc_memalign(size_t boundary, size_t size);
+extern void *__libc_calloc(size_t number, size_t size);
 
 void* my_malloc_hook (size_t size, void *caller);
 void my_free_hook (void *ptr, void *caller);
@@ -33,8 +34,60 @@ void *last_valid_addr = 0;
 
 size_t count_free_mem = 0;
 
+const size_t _align_malloc = 16; //sizeof(void*);
+
+
 void* memalign(size_t boundary, size_t size){
     return __libc_memalign(boundary, size);
+}
+
+void* calloc(size_t number, size_t size)
+{
+    void *result = 0;
+    void *caller;
+
+    if(!is_init_pool) {
+        InitTinyMalloc();
+    }
+
+    if(!mutex_malloc) {
+        return __libc_calloc(number, size);
+    }
+
+    pthread_mutex_lock(mutex_malloc);
+    caller = __builtin_return_address(0);
+
+#ifdef MEMORY_CHECK
+    checkMemory();
+#endif
+
+    {
+        size_t total_size = number * size;
+
+        if (total_size >= SIZE_MEM_HOOK_MALLOC) {
+            result =  my_malloc_hook(total_size, caller);
+            char *ptr1 = (char*)result;
+
+            if( (ptr1 + ((HookChunk*)ptr1 - 1)->size) != last_valid_addr ) {
+                size_t i;
+                for(i = 0; i < total_size; ++i){
+                    *ptr1 = 0;
+                    ++ptr1;
+                }
+            }
+        } else {
+            result = __libc_calloc(number, size);
+        }
+    }
+
+
+#ifdef MEMORY_CHECK
+    checkMemory();
+#endif
+
+    pthread_mutex_unlock(mutex_malloc);
+
+    return result;
 }
 
 void free (void *ptr)
@@ -132,8 +185,12 @@ void* realloc (void* ptr, size_t size)
 void* my_realloc_hook (void *ptr, size_t size, void *caller)
 {
     void *result = 0;
-
     HookChunk *curr_ptr = 0;
+
+    size_t _align = size % _align_malloc;
+    if(_align) {
+        size += _align_malloc - _align;
+    }
 
     if(ptr)
     {
@@ -144,9 +201,12 @@ void* my_realloc_hook (void *ptr, size_t size, void *caller)
             {
                 result = ptr1 + 1;
                 ptr1->is_available = 1;
+
+                return result;
             }
             curr_ptr = ptr1;
         }
+
     }
 
     if(!result){
@@ -190,7 +250,18 @@ void* my_realloc_hook (void *ptr, size_t size, void *caller)
             printf("!!!!!!!!!!!!!!! Error realloc size =%ld\n",
                    size + total_alloc_mem);
         }
+    }
 
+    if(result && curr_ptr) {
+        //copy data from old block
+        size_t i;
+        char *ptr1 = (char*)result;
+        char *ptr2 = (char*)(curr_ptr + 1);
+        for(i = 0; i < curr_ptr->size; ++i) {
+            *ptr1 = *ptr2;
+            ++ptr1;
+            ++ptr2;
+        }
     }
 
     return result;
@@ -232,8 +303,6 @@ void* malloc (size_t size)
 
     return result;
 }
-
-const size_t _align_malloc = 16; //sizeof(void*);
 
 void* my_malloc_hook (size_t size, void *caller)
 {
@@ -314,10 +383,12 @@ void InitTinyMalloc() {
     memset(ptr_base_heap, 0, TOTAL_MEM_HOOK_MALLOC);
 
     mutex_malloc = (pthread_mutex_t*)__libc_malloc(sizeof (pthread_mutex_t));
-    memset(mutex_malloc, 0, sizeof(pthread_mutex_t));
+    // memset(mutex_malloc, 0, sizeof(pthread_mutex_t));
+    pthread_mutex_init(mutex_malloc, NULL);
 
     is_init_pool = 1;
 }
+
 
 void PackTinyMalloc()
 {
@@ -338,7 +409,6 @@ void PackTinyMalloc()
     }
 
     pthread_mutex_unlock(mutex_malloc);
-
 }
 
 #ifdef MEMORY_CHECK
@@ -405,5 +475,4 @@ void DumpTinyMalloc(const char* name)
 
         fclose(fd);
     }
-
 }

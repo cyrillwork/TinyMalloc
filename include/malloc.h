@@ -28,6 +28,7 @@ struct __attribute__ ((packed)) HookChunk
     int     is_available;
     int     unused1;
     size_t  unused2;
+    size_t  unused3;
 };
 
 

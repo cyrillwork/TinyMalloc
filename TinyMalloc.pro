@@ -7,6 +7,7 @@ SOURCES = \
 
 INCLUDEPATH += include
 
+#DEFINES += MEMORY_CHECK
 
 HEADERS = \
     include/malloc.h

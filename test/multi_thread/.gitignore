@@ -1,0 +1,9 @@
+multi_thread
+*.txt
+Makefile
+*.o
+*.so.*
+*.so
+*.user
+*.cmd
+

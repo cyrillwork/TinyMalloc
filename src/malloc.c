@@ -64,17 +64,24 @@ void* calloc(size_t number, size_t size)
     {
         size_t total_size = number * size;
 
+        size_t _align = total_size % _align_malloc;
+        if(_align) {
+            total_size += _align_malloc - _align;
+        }
+
         if (total_size >= SIZE_MEM_HOOK_MALLOC) {
             result =  my_malloc_hook(total_size, caller);
             char *ptr1 = (char*)result;
 
-            if( (ptr1 + ((HookChunk*)ptr1 - 1)->size) != last_valid_addr ) {
+            //if( (ptr1 + ((HookChunk*)ptr1 - 1)->size) != last_valid_addr )
+            {
                 size_t i;
                 for(i = 0; i < total_size; ++i){
                     *ptr1 = 0;
                     ++ptr1;
                 }
             }
+
         } else {
             result = __libc_calloc(number, size);
         }
@@ -266,7 +273,6 @@ void* my_realloc_hook (void *ptr, size_t size, void *caller)
 
     return result;
 }
-
 
 void* malloc (size_t size)
 {

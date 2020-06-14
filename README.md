@@ -1,2 +1,2 @@
-# TinyMalloc
-Simple memory manager
+TinyMalloc library - simple memory manager. The library implements redefining dynamic memory functions, save statistics in file for checking out memory leaks and defragment. Works only with gcc. For examples see directory test.
+Simple description. Overrides the functions for working with dynamic memory: malloc, free, realloc, calloc. When starting, a large block of memory is allocated, then when running, if a block of memory larger than the specified size is requested, the address from the initial block of memory is returned, if smaller, the standard melloc, free,... functions are called.
